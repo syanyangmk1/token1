@@ -1,122 +1,197 @@
 #include <iostream>
-#include <string>
 #include <vector>
+#include <string>
+#include <cstdlib>
+#include <ctime>
+#include <stack>
+#include <cctype>
+#include <sstream>
+#include <stdexcept>
+#include <cmath>
 
 enum class TokenType {
-	NUMBER,
-	Plus , 
-	Minus, 
-	Multiple, 
-	Divide,
-	LEFT_PAREN,
-	RIGHT_PAREN,
-	INVALID
+    Operator, Operand, LeftParen, RightParen
 };
 
 struct Token {
-	std::string value;
-	TokenType type;
+    TokenType Type;
+    std::string Data;
 };
 
-bool isNumberChar(char c) {
-	return (c >= '0' && c <= '9') || c == '.';
+// Fraction 클래스: 분수 계산을 위한 클래스
+class Fraction {
+public:
+    int numerator;  // 분자
+    int denominator;  // 분모
+
+    Fraction(int num = 0, int denom = 1) : numerator(num), denominator(denom) {
+        if (denom == 0) throw std::runtime_error("Denominator cannot be zero.");
+        reduce();
+    }
+
+    void print() const {
+        std::cout << numerator << "/" << denominator;
+    }
+
+    double toDouble() const {
+        return static_cast<double>(numerator) / denominator;
+    }
+
+    Fraction operator+(const Fraction& other) const {
+        int commonDenom = denominator * other.denominator;
+        int num = numerator * other.denominator + other.numerator * denominator;
+        return Fraction(num, commonDenom);
+    }
+
+    Fraction operator-(const Fraction& other) const {
+        int commonDenom = denominator * other.denominator;
+        int num = numerator * other.denominator - other.numerator * denominator;
+        return Fraction(num, commonDenom);
+    }
+
+    Fraction operator*(const Fraction& other) const {
+        return Fraction(numerator * other.numerator, denominator * other.denominator);
+    }
+
+    Fraction operator/(const Fraction& other) const {
+        if (other.numerator == 0) throw std::runtime_error("Cannot divide by zero.");
+        return Fraction(numerator * other.denominator, denominator * other.numerator);
+    }
+
+private:
+    void reduce() {
+        int gcd = findGCD(abs(numerator), abs(denominator));
+        numerator /= gcd;
+        denominator /= gcd;
+    }
+
+    int findGCD(int a, int b) const {
+        while (b != 0) {
+            int temp = b;
+            b = a % b;
+            a = temp;
+        }
+        return a;
+    }
+};
+
+// 우선순위 반환 함수
+int getOperatorPriority(char op) {
+    if (op == '+' || op == '-') return 1;
+    if (op == '*' || op == '/') return 2;
+    return 0;
 }
 
-bool isValidNumber(const std::string& str) {
-	for (char c : str) {
-		if (!isNumberChar(c)) {
-			return false;
-		}
-	}
-	return true;
+// 연산 수행
+Fraction applyOperator(const Fraction& left, const Fraction& right, char op) {
+    switch (op) {
+    case '+': return left + right;
+    case '-': return left - right;
+    case '*': return left * right;
+    case '/': return left / right;
+    default: throw std::runtime_error("Invalid operator");
+    }
 }
 
-bool isValidOperator(char op) {
-	return op == '+' || op == '-' || op == '*' || op == '/';
+// 토큰화 함수
+std::vector<Token> tokenize(const std::string& input) {
+    std::vector<Token> tokens;
+    size_t i = 0;
+    while (i < input.size()) {
+        char ch = input[i];
+        if (std::isspace(ch)) {
+            ++i;
+            continue;
+        }
+        if (std::isdigit(ch) || ch == '.' || ch == '/') {
+            size_t start = i;
+            while (i < input.size() && (std::isdigit(input[i]) || input[i] == '.' || input[i] == '/')) {
+                ++i;
+            }
+            tokens.push_back({ TokenType::Operand, input.substr(start, i - start) });
+        }
+        else if (ch == '(') {
+            tokens.push_back({ TokenType::LeftParen, "(" });
+            ++i;
+        }
+        else if (ch == ')') {
+            tokens.push_back({ TokenType::RightParen, ")" });
+            ++i;
+        }
+        else {
+            tokens.push_back({ TokenType::Operator, std::string(1, ch) });
+            ++i;
+        }
+    }
+    return tokens;
+}
+
+// 중위 표기법 계산 함수
+Fraction evaluateExpression(const std::vector<Token>& tokens) {
+    std::stack<Fraction> operands;
+    std::stack<char> operators;
+
+    for (const auto& token : tokens) {
+        if (token.Type == TokenType::Operand) {
+            size_t slashPos = token.Data.find('/');
+            if (slashPos != std::string::npos) {
+                int numerator = std::stoi(token.Data.substr(0, slashPos));
+                int denominator = std::stoi(token.Data.substr(slashPos + 1));
+                operands.push(Fraction(numerator, denominator));
+            }
+            else {
+                double value = std::stod(token.Data);
+                operands.push(Fraction(static_cast<int>(value * 1000), 1000));
+            }
+        }
+        else if (token.Type == TokenType::Operator) {
+            while (!operators.empty() && getOperatorPriority(operators.top()) >= getOperatorPriority(token.Data[0])) {
+                Fraction right = operands.top(); operands.pop();
+                Fraction left = operands.top(); operands.pop();
+                char op = operators.top(); operators.pop();
+                operands.push(applyOperator(left, right, op));
+            }
+            operators.push(token.Data[0]);
+        }
+        else if (token.Type == TokenType::LeftParen) {
+            operators.push('(');
+        }
+        else if (token.Type == TokenType::RightParen) {
+            while (!operators.empty() && operators.top() != '(') {
+                Fraction right = operands.top(); operands.pop();
+                Fraction left = operands.top(); operands.pop();
+                char op = operators.top(); operators.pop();
+                operands.push(applyOperator(left, right, op));
+            }
+            if (operators.empty()) throw std::runtime_error("Mismatched parentheses");
+            operators.pop();  // Remove '('
+        }
+    }
+
+    while (!operators.empty()) {
+        Fraction right = operands.top(); operands.pop();
+        Fraction left = operands.top(); operands.pop();
+        char op = operators.top(); operators.pop();
+        operands.push(applyOperator(left, right, op));
+    }
+
+    return operands.top();
 }
 
 int main() {
-	std::string input;
-	std::cout << "Enter an expression: ";
-	std::getline(std::cin, input);
+    std::string inputExpression;
 
-	std::vector<Token> tokens;
-	std::string currentToken;
+    std::cout << "Enter an expression (e.g., (3/4 + 1/2) * 2): ";
+    std::getline(std::cin, inputExpression);
 
-	for (char c : input) {
-		if (c == ' ') {
-			continue; // Skip spaces
-		}
+    try {
+        auto tokens = tokenize(inputExpression);
+        Fraction result = evaluateExpression(tokens);
+        std::cout << "Result: " << result.toDouble() << std::endl;
+    }
+    catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << std::endl;
+    }
 
-		if (c == '(' || c == ')') {
-			if (!currentToken.empty()) {
-				tokens.push_back({ currentToken, TokenType::NUMBER });
-				currentToken.clear();
-			}
-			if (c == '(') {
-				tokens.push_back({ std::string(1, c), TokenType::LEFT_PAREN });
-			}
-			else {
-				tokens.push_back({ std::string(1, c), TokenType::RIGHT_PAREN });
-			}
-		}
-		else if (isNumberChar(c) || (c == '.' && isValidNumber(currentToken))) {
-			currentToken += c;
-		}
-		else {
-			if (!currentToken.empty()) {
-				tokens.push_back({ currentToken, TokenType::NUMBER });
-				currentToken.clear();
-			}
-			if (c == '+') {
-				tokens.push_back({ std::string(1, c), TokenType::Plus });
-			} else if (c == '-') {
-				tokens.push_back({ std::string(1, c), TokenType::Minus });
-			} else if (c == '*') {
-				tokens.push_back({ std::string(1, c), TokenType::Multiple });
-			} else if (c == '/') {
-				tokens.push_back({ std::string(1, c), TokenType::Divide });
-			}
-			else {
-				tokens.push_back({ std::string(1, c), TokenType::INVALID });
-			}
-		}
-	}
-
-	if (!currentToken.empty()) {
-		tokens.push_back({ currentToken, TokenType::NUMBER });
-	}
-
-	for (const Token& token : tokens) {
-		std::cout << "Token: " << token.value << " Type: ";
-		switch (token.type) {
-		case TokenType::NUMBER:
-			std::cout << "Number";
-			break;
-		case TokenType::Plus:
-			std::cout << "Plus";
-			break;
-		case TokenType::Minus:
-			std::cout << "Minus";
-			break;
-		case TokenType::Multiple:
-			std::cout << "Multiple";
-			break;
-		case TokenType::Divide:
-			std::cout << "Divide";
-			break;			
-		case TokenType::LEFT_PAREN:
-			std::cout << "Left Parenthesis";
-			break;
-		case TokenType::RIGHT_PAREN:
-			std::cout << "Right Parenthesis";
-			break;
-		case TokenType::INVALID:
-			std::cout << "Invalid";
-			break;
-		}
-		std::cout << std::endl;
-	}
-
-	return 0;
+    return 0;
 }
